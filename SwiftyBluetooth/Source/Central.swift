@@ -25,17 +25,17 @@ import CoreBluetooth
 
 // For iOS9 Support
 #if !swift(>=2.3)
-    public typealias CBManagerState = CBCentralManagerState
+public typealias CBManagerState = CBCentralManagerState
 #endif
 
 /**
-    The different results returned in the closure of the Central scanWithTimeout(...) function.
-
-    - ScanStarted: The scan just started.
-    - ScanResult: A Peripheral found result. `RSSI` will be nil if it could not be read.
-    - ScanStopped: The scan ended.
+ The different results returned in the closure of the Central scanWithTimeout(...) function.
  
-*/
+ - ScanStarted: The scan just started.
+ - ScanResult: A Peripheral found result. `RSSI` will be nil if it could not be read.
+ - ScanStopped: The scan ended.
+ 
+ */
 public enum PeripheralScanResult {
     case scanStarted
     case scanResult(peripheral: Peripheral, advertisementData: [String: Any], RSSI: Int?)
@@ -43,14 +43,14 @@ public enum PeripheralScanResult {
 }
 
 /**
-    An enum type whoses rawValues mirror the CBCentralManagerState enum owns Integer values but without the ".Resetting" and ".Unknown" temporary values.
-
-    - Unsupported: CBCentralManagerState.Unsupported
-    - Unauthorized: CBCentralManagerState.Unauthorized
-    - PoweredOff: CBCentralManagerState.PoweredOff
-    - PoweredOn: CBCentralManagerState.PoweredOn
-
-*/
+ An enum type whoses rawValues mirror the CBCentralManagerState enum owns Integer values but without the ".Resetting" and ".Unknown" temporary values.
+ 
+ - Unsupported: CBCentralManagerState.Unsupported
+ - Unauthorized: CBCentralManagerState.Unauthorized
+ - PoweredOff: CBCentralManagerState.PoweredOff
+ - PoweredOn: CBCentralManagerState.PoweredOn
+ 
+ */
 public enum AsyncCentralState: Int {
     case unsupported = 2
     case unauthorized = 3
@@ -80,6 +80,10 @@ public final class Central {
     /// Unwrap with `notification.userInfo?["state"] as? CBCentralManagerState`
     public static let CentralStateChange = Notification.Name("SwiftyBluetooth_CentralStateChange")
     
+    /// The name of a `Notification` posted by the Central sharedInstance when the peripheral gets disconnected.
+    /// Unwrap with `notification.userInfo?["uuid"] as? UUID0`
+    public static let CentralPeripheralDisconnected = Notification.Name("SwiftyBluetooth_CentralPeripheralDisconnected")
+    
     /// The sharedInstance Singleton, you can instantiate it yourself by
     /// calling `setSharedInstanceWith(restoreIdentifier: )` which will allow you
     /// to pass in a state preservation identifier. Otherwise, this sharedInstance
@@ -102,6 +106,16 @@ public final class Central {
         return _sharedInstance!
     }
     
+    /// Allows you to initially set the sharedInstance and use the restore
+    /// identifier string of your choice for state preservation between app
+    /// launches.
+    @discardableResult
+    public static func setSharedInstanceWith(restoreIdentifier: String?, queue: DispatchQueue?) -> Central {
+        assert(_sharedInstance == nil, "You can only set the sharedInstance of the Central once and you must do so before calling any other SwiftyBluetooth functions.")
+        _sharedInstance = Central(stateRestoreIdentifier: restoreIdentifier, queue: queue)
+        return _sharedInstance!
+    }
+    
     fileprivate let centralProxy: CentralProxy
     
     private init() {
@@ -110,6 +124,10 @@ public final class Central {
     
     private init(stateRestoreIdentifier: String) {
         self.centralProxy = CentralProxy(stateRestoreIdentifier: stateRestoreIdentifier)
+    }
+    
+    private init(stateRestoreIdentifier: String?, queue: DispatchQueue?) {
+        self.centralProxy = CentralProxy(stateRestoreIdentifier: stateRestoreIdentifier, queue: queue)
     }
     
 }
@@ -164,9 +182,13 @@ extension Central {
         return self.centralProxy.centralManager.isScanning
     }
     
+    public var defaultQueue: DispatchQueue {
+        return self.centralProxy.queue ?? DispatchQueue.main
+    }
+    
     /// Attempts to return the periperals from a list of identifier "UUID"s
     public func retrievePeripherals(withUUIDs uuids: [CBUUIDConvertible]) -> [Peripheral] {
-        let uuids = uuids.compactMap { UUID(uuidString: $0.CBUUIDRepresentation.uuidString)  }
+        let uuids = uuids.flatMap { UUID(uuidString: $0.CBUUIDRepresentation.uuidString)  }
         let cbPeripherals = self.centralProxy.centralManager.retrievePeripherals(withIdentifiers: uuids)
         let peripherals = cbPeripherals.map { cbPeripheral -> Peripheral in
             return Peripheral(peripheral: cbPeripheral)

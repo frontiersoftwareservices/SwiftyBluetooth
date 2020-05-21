@@ -47,7 +47,8 @@ public typealias UpdateNotificationStateCallback = (_ result: SwiftyBluetooth.Re
 
 /// An interface on top of a CBPeripheral instance used to run CBPeripheral related functions with closures based callbacks instead of the usual CBPeripheralDelegate interface.
 public final class Peripheral {
-    fileprivate var peripheralProxy: PeripheralProxy!
+    var peripheralProxy: PeripheralProxy!
+    var advertiseName: String?
     
     init(peripheral: CBPeripheral) {
         self.peripheralProxy = PeripheralProxy(cbPeripheral: peripheral, peripheral: self)
@@ -70,6 +71,27 @@ extension Peripheral {
     /// Unwrap the error if any with `notification.userInfo?["error"] as? SBError`
     public static let PeripheralCharacteristicValueUpdate = Notification.Name(rawValue: "SwiftyBluetooth_PharacteristicValueUpdate")
     
+    
+    /// Set the underlying CBPeripheral notify callback
+    /// If set, NotificationManager will not be used
+    public func setNotifyCallback(_ callback: PeripheralNotificationCallback?) {
+        self.peripheralProxy.notifyCallback = callback
+    }
+    
+    /// The underlying CBPeripheral
+    public var proxy: CBPeripheral {
+        return self.peripheralProxy.cbPeripheral
+    }
+    
+    public var defaultTimeout: TimeInterval {
+        set {
+            PeripheralProxy.defaultTimeoutInS = newValue
+        }
+        get {
+            return PeripheralProxy.defaultTimeoutInS
+        }
+    }
+    
     /// The underlying CBPeripheral identifier
     public var identifier: UUID {
         return self.peripheralProxy.cbPeripheral.identifier
@@ -77,6 +99,9 @@ extension Peripheral {
     
     /// The underlying CBPeripheral name
     public var name: String? {
+        if self.advertiseName != nil {
+            return self.advertiseName
+        }
         return self.peripheralProxy.cbPeripheral.name
     }
     
@@ -236,7 +261,7 @@ extension Peripheral {
         self.readValue(ofCharacWithUUID: charac,
                        fromServiceWithUUID: charac.service,
                        completion: completion)
-    }
+}
     
     /// Connect to the peripheral and read the value of the descriptor requested through a 'CBPeripheral' readValueForDescriptor(...) function call.
     /// Will first discover the service, characteristic and descriptor you want to read from if necessary.

@@ -23,8 +23,10 @@
 
 import CoreBluetooth
 
+public typealias PeripheralNotificationCallback = (_ userInfo: [AnyHashable: Any]) -> Void
+
 final class PeripheralProxy: NSObject  {
-    static let defaultTimeoutInS: TimeInterval = 10
+    static var defaultTimeoutInS: TimeInterval = 10
     
     fileprivate lazy var readRSSIRequests: [ReadRSSIRequest] = []
     fileprivate lazy var serviceRequests: [ServiceRequest] = []
@@ -39,6 +41,7 @@ final class PeripheralProxy: NSObject  {
     
     fileprivate weak var peripheral: Peripheral?
     let cbPeripheral: CBPeripheral
+    var notifyCallback: PeripheralNotificationCallback?
     
     // Peripheral that are no longer valid must be rediscovered again (happens when for example the Bluetooth is turned off
     // from a user's phone and turned back on
@@ -47,7 +50,7 @@ final class PeripheralProxy: NSObject  {
     init(cbPeripheral: CBPeripheral, peripheral: Peripheral) {
         self.cbPeripheral = cbPeripheral
         self.peripheral = peripheral
-        
+        self.notifyCallback = nil
         super.init()
         
         cbPeripheral.delegate = self
@@ -205,7 +208,8 @@ extension PeripheralProxy {
             return
         }
         
-        self.cbPeripheral.discoverServices(request.serviceUUIDs)
+        self.cbPeripheral.delegate = self
+        self.cbPeripheral.discoverServices(nil)
         
         Timer.scheduledTimer(
             timeInterval: PeripheralProxy.defaultTimeoutInS,
@@ -283,6 +287,7 @@ extension PeripheralProxy {
             return
         }
         
+        self.cbPeripheral.delegate = self
         self.cbPeripheral.discoverIncludedServices(request.serviceUUIDs, for: request.parentService)
         
         Timer.scheduledTimer(
@@ -381,6 +386,7 @@ extension PeripheralProxy {
             return
         }
         
+        self.cbPeripheral.delegate = self
         self.cbPeripheral.discoverCharacteristics(request.characteristicUUIDs, for: request.service)
         
         Timer.scheduledTimer(
@@ -458,6 +464,7 @@ extension PeripheralProxy {
             return
         }
         
+        self.cbPeripheral.delegate = self
         self.cbPeripheral.discoverDescriptors(for: request.characteristic)
         
         Timer.scheduledTimer(
@@ -541,6 +548,7 @@ extension PeripheralProxy {
             return
         }
         
+        self.cbPeripheral.delegate = self
         self.cbPeripheral.readValue(for: request.characteristic)
         
         Timer.scheduledTimer(
@@ -631,6 +639,7 @@ extension PeripheralProxy {
             return
         }
         
+        self.cbPeripheral.delegate = self
         self.cbPeripheral.readValue(for: request.descriptor)
         
         Timer.scheduledTimer(
@@ -726,6 +735,7 @@ extension PeripheralProxy {
             return
         }
         
+        self.cbPeripheral.delegate = self
         self.cbPeripheral.writeValue(request.value, for: request.characteristic, type: request.type)
         
         if request.type == CBCharacteristicWriteType.withResponse {
@@ -832,6 +842,7 @@ extension PeripheralProxy {
             return
         }
         
+        self.cbPeripheral.delegate = self
         self.cbPeripheral.writeValue(request.value, for: request.descriptor)
         
         Timer.scheduledTimer(
@@ -919,6 +930,7 @@ extension PeripheralProxy {
             return
         }
         
+        self.cbPeripheral.delegate = self
         self.cbPeripheral.setNotifyValue(request.enabled, for: request.characteristic)
         
         Timer.scheduledTimer(
@@ -1099,6 +1111,11 @@ extension PeripheralProxy: CBPeripheralDelegate {
                 var userInfo: [AnyHashable: Any] = ["characteristic": characteristic]
                 if let error = error {
                     userInfo["error"] = error
+                }
+                
+                if let notifyCallback = notifyCallback {
+                    notifyCallback(userInfo)
+                    return
                 }
                 
                 self.postPeripheralEvent(Peripheral.PeripheralCharacteristicValueUpdate, userInfo: userInfo)

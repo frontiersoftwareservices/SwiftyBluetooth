@@ -31,6 +31,8 @@ final class CentralProxy: NSObject {
     fileprivate lazy var connectRequests: [UUID: ConnectPeripheralRequest] = [:]
     fileprivate lazy var disconnectRequests: [UUID: DisconnectPeripheralRequest] = [:]
     
+    var queue: DispatchQueue?
+    
     var centralManager: CBCentralManager!
     
     override init() {
@@ -43,6 +45,18 @@ final class CentralProxy: NSObject {
         super.init()
         
         self.centralManager = CBCentralManager(delegate: self, queue: nil, options: [CBCentralManagerOptionRestoreIdentifierKey: stateRestoreIdentifier])
+    }
+    
+    init(stateRestoreIdentifier: String?, queue: DispatchQueue? = nil) {
+        super.init()
+        self.queue = queue
+        if let stateRestoreIdentifier = stateRestoreIdentifier{
+            self.centralManager = CBCentralManager(delegate: self, queue: queue, options: [CBCentralManagerOptionRestoreIdentifierKey: stateRestoreIdentifier])
+        } else {
+            self.centralManager = CBCentralManager(delegate: self, queue: queue)
+        }
+        
+        
     }
     
     fileprivate func postCentralEvent(_ event: NSNotification.Name, userInfo: [AnyHashable: Any]? = nil) {
@@ -134,12 +148,7 @@ extension CentralProxy {
     }
     
     func stopScan(error: SBError? = nil) {
-
-        // avoid an API MISUSE warning on the console if bluetooth is powered off or unsupported
-        if self.centralManager.state != .poweredOff, self.centralManager.state != .unsupported {
-            self.centralManager.stopScan()
-        }
-
+        self.centralManager.stopScan()
         if let scanRequest = self.scanRequest {
             self.scanRequest = nil
             scanRequest.callback(.scanStopped(error: error))
@@ -355,13 +364,16 @@ extension CentralProxy: CBCentralManagerDelegate {
     
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         let uuid = peripheral.identifier
+        
         guard let request = disconnectRequests[uuid] else {
+            postCentralEvent(Central.CentralPeripheralDisconnected, userInfo: ["uuid": uuid])
             return
         }
         
         disconnectRequests[uuid] = nil
         
         request.invokeCallbacks(error: error)
+        postCentralEvent(Central.CentralPeripheralDisconnected, userInfo: ["uuid": uuid])
     }
     
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -387,6 +399,9 @@ extension CentralProxy: CBCentralManagerDelegate {
         }
         
         let peripheral = Peripheral(peripheral: peripheral)
+        if let name = advertisementData["kCBAdvDataLocalName"] as? String, name.count > 0 {
+            peripheral.advertiseName = advertisementData["kCBAdvDataLocalName"] as? String
+        }
         
         var rssiOptional: Int? = Int(truncating: RSSI)
         if let rssi = rssiOptional, rssi == 127 {
@@ -400,5 +415,5 @@ extension CentralProxy: CBCentralManagerDelegate {
         let peripherals = ((dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral]) ?? []).map { Peripheral(peripheral: $0) }
         postCentralEvent(Central.CentralManagerWillRestoreState, userInfo: ["peripherals": peripherals])
     }
-
+    
 }
